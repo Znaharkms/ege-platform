@@ -1,0 +1,10 @@
+/* One search field component for terms, dates and plans. */
+html body .reference-search-field{position:relative;display:flex!important;align-items:center;gap:8px;margin:0 0 12px;padding:7px!important;border:2px solid #b6ade9!important;border-radius:15px!important;background:transparent!important;box-shadow:0 5px 18px #696dce0c!important;outline:0!important}
+html body.history-page .reference-search-field{border-color:#dfa3a0!important}
+html body .reference-search-field input[type=search],html body .reference-search-field input[type=search]:focus,html body .reference-search-field input[type=search]:focus-visible{flex:1;width:100%;min-width:0;margin:0;padding:10px 11px!important;border:0!important;border-radius:0!important;outline:0!important;outline-offset:0!important;box-shadow:none!important;appearance:none;-webkit-appearance:none;background:transparent!important;color:var(--ink);font:inherit;font-size:16px!important}
+html body .reference-search-field>button{flex-shrink:0;margin:0;padding:11px 22px!important;border:0;border-radius:10px!important;background:var(--brand)!important;color:#fff;font-size:14px!important;line-height:1.6;white-space:nowrap}
+html body .reference-search-field:focus-within{border-color:var(--brand)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 18%,transparent)!important}
+html body .reference-search-field>button span{display:inline!important;margin-left:8px}
+@media(max-width:680px){html body .reference-search-field input[type=search]{padding:9px 7px!important;font-size:15px!important}html body .reference-search-field>button{padding:10px 14px!important}html body .reference-search-field>button span{display:none!important}}
+
+html body .reference-search-field[hidden]{display:none!important}

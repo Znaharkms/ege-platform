@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Администратор · ЕГЭ Онлайн</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=0.24.1">
+<link rel="stylesheet" href="/learn/assets/mode-switch.css?v=0.24.1"><link rel="stylesheet" href="/learn/assets/responsive.css?v=0.24.1"><link rel="stylesheet" href="/learn/assets/promotions.css?v=0.24.1"><script src="/learn/assets/promotions.js?v=0.24.1" defer></script></head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <main id="login-screen" class="login-screen">
+    <section class="login-card">
+      <img src="/learn/assets/school-logo.webp" alt="ЕГЭ-онлайн — Олеся Блок" style="width:100%;max-width:300px;height:auto">
+      <p class="eyebrow">ЕГЭ Онлайн · Олеся Блок</p>
+      <h1>Панель администратора</h1>
+      <p class="muted">Войдите по адресу администратора. Код появится в терминале, где запущен backend.</p>
+
+      <form id="email-form" class="stack">
+        <label>Электронная почта
+          <input id="login-email" type="email" value="admin@example.com" autocomplete="email" required>
+        </label>
+        <button class="button primary" type="submit">Получить код</button>
+      </form>
+
+      <form id="code-form" class="stack hidden">
+        <label>Шестизначный код
+          <input id="login-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
+        </label>
+        <button class="button primary" type="submit">Войти</button>
+        <button id="resend-code" class="button ghost" type="button">Запросить новый код</button>
+        <button id="change-email" class="button ghost" type="button">Изменить почту</button>
+      </form>
+
+      <p id="login-hint" class="form-hint">Для локальной версии письмо не отправляется: код печатается в окне Uvicorn.</p>
+    </section>
+  </main>
+
+  <div id="app-screen" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <a href="/"><img src="/learn/assets/school-logo.webp" alt="ЕГЭ-онлайн — Олеся Блок" style="width:170px;max-width:100%;height:auto"></a>
+        
+      </div>
+      <nav class="nav-list" aria-label="Разделы">
+        <button class="nav-item active" data-view="content">
+          <span class="nav-icon">≡</span><span>Справочник</span>
+        </button>
+        <button class="nav-item" data-view="tests">
+          <span class="nav-icon">✓</span><span>Тесты</span>
+        </button>
+        <button class="nav-item" data-view="history-trainer">
+          <span class="nav-icon">⌁</span><span>Тренажёр по истории</span>
+        </button>
+        <button class="nav-item" data-view="error-reports">
+          <span class="nav-icon">!</span><span>Обращения учеников</span><span id="error-reports-nav-badge" class="nav-count hidden">0</span>
+        </button>
+        <button class="nav-item" data-view="students"><span class="nav-icon">♙</span><span>Список учеников</span></button>
+        <button class="nav-item" data-view="audit"><span class="nav-icon">≡</span><span>Журнал действий</span></button>
+        <button class="nav-item" data-view="promotions"><span class="nav-icon">↗</span><span>Продвижение</span></button>
+        <button class="nav-item" data-view="search-statistics"><span class="nav-icon">⌕</span><span>Статистика поиска</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="admin-identity" class="identity"></div>
+        <button id="logout-button" class="button ghost full" type="button">Выйти</button>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="mobile-header">
+        <div class="sidebar-brand"><a href="/"><img src="/learn/assets/school-logo.webp" alt="ЕГЭ-онлайн — Олеся Блок" style="width:170px;max-width:100%;height:auto"></a></div>
+        <button id="mobile-nav-toggle" class="icon-button" type="button" aria-label="Открыть меню">☰</button>
+      </header>
+
+      <section id="audit-view" class="view hidden"><h1>Журнал действий администратора</h1><p>Успешные изменения и выгрузки Excel с момента установки обновления.</p><form id="audit-search" class="students-toolbar"><input id="audit-query" maxlength="120" placeholder="Имя, почта администратора или путь действия" aria-label="Поиск в журнале"><select id="audit-event" aria-label="Событие"><option value="all">Все события</option><option value="access">Блокировка и разблокировка</option><option value="notes">Заметки, группы и предметы</option><option value="reply">Ответы ученикам</option><option value="report_status">Статусы обращений</option><option value="promotion">Продвижение</option><option value="export">Выгрузки Excel</option><option value="content">Справочники и материалы</option><option value="tests">Вопросы и тесты</option><option value="media">Загрузка картинок</option><option value="other">Прочие события</option></select><button class="button primary">Найти</button></form><p id="audit-notice" role="status"></p><div id="audit-list"></div><button id="audit-more" class="button ghost hidden">Показать ещё</button></section>
+      <section id="promotions-view" class="view hidden"><h1>Продвижение</h1><button id="promotion-new" class="button primary">Создать карточку</button><p>Показы и переходы: уникальные посетители по месту показа за день. Приоритет — от 0 до 1000; большее значение показывается первым.</p><div id="promotions-list"></div><section id="promotion-editor" hidden><h2>Редактор карточки</h2><form id="promotion-form" class="student-notes">
+<label>Название для администратора<input name="name" required maxlength="120"></label><label>Заголовок<input name="title" required maxlength="160"></label><label>Текст<textarea name="body" rows="4" maxlength="1500"></textarea></label><label>Текст кнопки<input name="button" required maxlength="60"></label><label>Ссылка<input name="url" type="url" required maxlength="2000" placeholder="https://"></label><label>Картинка<input name="imageFile" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="promotion-remove-image" class="button ghost" type="button">Убрать картинку</button><label>Предмет<select name="subject"><option value="both">Оба предмета</option><option value="history">История</option><option value="society">Обществознание</option></select></label><fieldset><legend>Места показа</legend><label><input type="checkbox" name="placement" value="home">Главная</label><label><input type="checkbox" name="placement" value="history">История</label><label><input type="checkbox" name="placement" value="society">Обществознание</label><label><input type="checkbox" name="placement" value="material">После найденного материала</label><label><input type="checkbox" name="placement" value="result">Результаты тренировки</label><label><input type="checkbox" name="placement" value="cabinet">Кабинет · Мой профиль</label></fieldset><label>Состояние<select name="status"><option value="draft">Черновик</option><option value="active">Включена</option><option value="off">Выключена</option></select></label><label>Приоритет<input name="priority" type="number" min="0" max="1000" value="0"></label><label>Начало показа<input name="starts_at" type="datetime-local"></label><label>Окончание показа<input name="ends_at" type="datetime-local"></label><small>Время указано в часовом поясе вашего браузера. Пустые даты — без ограничения.</small><div><button id="promotion-save" class="button primary">Сохранить</button><button id="promotion-cancel" class="button ghost" type="button">Отмена</button></div><p id="promotion-notice" role="status"></p></form><label class="promotion-preview-toggle"><span>Предпросмотр для телефона</span><input id="promotion-mobile-preview" type="checkbox"></label><div id="promotion-preview"></div></section></section>
+      <section id="search-statistics-view" class="view hidden"><h1>Статистика поиска</h1><form id="search-statistics-form" class="students-toolbar"><label>С<input id="search-statistics-start" type="date" required></label><label>По<input id="search-statistics-end" type="date" required></label><button class="button primary">Показать</button></form><p>Все посетители, включая незарегистрированных. Очистка личной истории не влияет на статистику. Тестовые аккаунты и поиски без категории исключены.</p><p id="search-statistics-notice" role="status"></p><div id="search-statistics-items" class="students-list"></div></section>
+      <section id="students-view" class="view hidden">
+        <h1>Список учеников</h1>
+        <form id="students-search" class="students-toolbar"><input id="students-query" placeholder="Имя или почта" maxlength="120" aria-label="Имя или почта"><div class="student-select-filters"><select id="students-status" aria-label="Доступ"><option value="">Все ученики</option><option value="active">Активные</option><option value="blocked">Заблокированные</option></select><select id="students-subject" aria-label="Предмет"><option value="">Все предметы</option><option value="history">История</option><option value="society">Обществознание</option><option value="both">Оба предмета</option></select><select id="students-inactive" aria-label="Давно не занимались"><option value="0">Любая давность занятий</option><option value="7">Не занимались 7 дней</option><option value="14">Не занимались 14 дней</option><option value="30">Не занимались 30 дней</option><option value="90">Не занимались 90 дней</option></select></div><input id="students-group" placeholder="Название группы" maxlength="80" aria-label="Группа"><button class="button primary">Найти</button><button id="students-export" class="button ghost" type="button">Выгрузить Excel</button></form>
+        <p id="students-notice" role="status"></p><div id="students-list" class="students-list"></div><button id="students-more" class="button ghost hidden">Показать ещё</button>
+        
+      </section>
+      <section id="content-view" class="view">
+        <div id="content-picker">
+          <div class="page-heading reference-picker-heading">
+            <div><p class="eyebrow">Учебные материалы</p><h1>Справочники</h1><p class="muted">Двойной клик по карточке открывает выбранный справочник.</p></div>
+            <div class="page-actions reference-picker-actions">
+              <div class="view-switch" role="group" aria-label="Отображение справочников">
+                <button id="reference-view-list" class="view-switch-button icon-only" type="button"
+                  aria-label="Показать справочники списком" aria-pressed="false" title="Список">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg>
+                </button>
+                <button id="reference-view-cards" class="view-switch-button icon-only active" type="button"
+                  aria-label="Показать справочники плашками" aria-pressed="true" title="Плашки">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="4" width="7" height="6" rx="1"/><rect x="3" y="14" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/></svg>
+                </button>
+              </div>
+              <button id="create-reference-button" class="button primary" type="button">+ Создать справочник</button>
+            </div>
+          </div>
+          <div id="source-cards" class="reference-groups"><div class="loading">Проверяем импортированные базы…</div></div>
+        </div>
+
+        <div id="content-workspace" class="hidden">
+          <button id="back-to-references" class="reference-back" type="button"><span aria-hidden="true">←</span> Все справочники</button>
+          <div class="page-heading">
+            <div><p id="active-reference-subject" class="eyebrow"></p><h1 id="active-reference-title"></h1></div>
+            <div class="page-actions">
+              <button id="reference-settings-button" class="button secondary hidden" type="button">Настройки</button>
+              <button id="archive-reference-button" class="button danger" type="button">Архивировать справочник</button>
+              <button id="new-content-button" class="button primary" type="button">+ Новый материал</button>
+            </div>
+          </div>
+          <div class="toolbar content-toolbar">
+            <input id="content-search" type="search" placeholder="Поиск по выбранному справочнику" aria-label="Поиск">
+            <select id="content-subject-filter" class="hidden" aria-label="Предмет">
+              <option value="history">История</option>
+              <option value="society">Обществознание</option>
+            </select>
+            <select id="content-type-filter" class="hidden" aria-label="Тип">
+              <option value="date">Даты</option>
+              <option value="term">Термины</option>
+              <option value="plan">Планы</option>
+            </select>
+            <select id="content-status-filter" aria-label="Статус">
+              <option value="">Все статусы</option>
+              <option value="draft">Черновики</option>
+              <option value="published">Опубликованные</option>
+              <option value="archived">Архив</option>
+            </select>
+            <select id="content-period-filter" class="hidden" aria-label="Период">
+              <option value="">Все периоды</option>
+            </select>
+            <button id="refresh-content" class="button secondary" type="button">Найти</button>
+          </div>
+          <div id="content-list" class="content-list"></div>
+          <div id="content-load-sentinel" class="load-sentinel hidden" aria-live="polite">Загружаем следующие 50…</div>
+        </div>
+      </section>
+
+      <section id="tests-view" class="view hidden">
+        <div id="tests-picker">
+          <div class="page-heading">
+            <div><p class="eyebrow">Практика</p><h1>Тесты</h1><p class="muted">Создайте тест, затем добавляйте и редактируйте вопросы внутри него.</p></div>
+            <div class="page-actions">
+              <button id="open-question-bank" class="button secondary" type="button">Банк вопросов</button>
+              <button id="new-test-button" class="button primary" type="button">+ Новый тест</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <select id="test-subject-filter" aria-label="Предмет">
+              <option value="">Все предметы</option>
+              <option value="history">История</option>
+              <option value="society">Обществознание</option>
+            </select>
+            <select id="test-status-filter" aria-label="Статус">
+              <option value="">Все статусы</option>
+              <option value="draft">Черновики</option>
+              <option value="published">Опубликованные</option>
+              <option value="archived">Архив</option>
+            </select>
+            <button id="refresh-tests" class="button secondary" type="button">Обновить</button>
+          </div>
+          <div id="tests-list" class="content-list"></div>
+        </div>
+
+        <div id="question-bank-workspace" class="hidden">
+          <button id="back-from-question-bank" class="reference-back" type="button"><span aria-hidden="true">←</span> Все тесты</button>
+          <div class="page-heading">
+            <div><p class="eyebrow">Практика</p><h1>Банк вопросов</h1><p class="muted">Здесь находятся все вопросы, в том числе убранные из тестов.</p></div>
+          </div>
+          <div class="toolbar question-bank-toolbar">
+            <input id="question-bank-search" type="search" placeholder="Поиск по тексту вопроса" aria-label="Поиск">
+            <select id="question-bank-subject" aria-label="Предмет">
+              <option value="">Все предметы</option>
+              <option value="history">История</option>
+              <option value="society">Обществознание</option>
+            </select>
+            <select id="question-bank-assignment" aria-label="Привязка к тесту">
+              <option value="all">Все вопросы</option>
+              <option value="unassigned">Не добавлены ни в один тест</option>
+              <option value="assigned">Добавлены в тесты</option>
+            </select>
+            <select id="question-bank-status" aria-label="Статус">
+              <option value="">Все статусы</option>
+              <option value="draft">Черновики</option>
+              <option value="published">Опубликованные</option>
+              <option value="archived">Архив</option>
+            </select>
+            <button id="refresh-question-bank" class="button secondary" type="button">Найти</button>
+          </div>
+          <div id="question-bank-list" class="content-list"></div>
+          <button id="load-more-question-bank" class="button secondary hidden" type="button">Показать ещё</button>
+        </div>
+
+        <div id="test-workspace" class="hidden">
+          <button id="back-to-tests" class="reference-back" type="button"><span aria-hidden="true">←</span> Все тесты</button>
+          <div class="page-heading">
+            <div><p id="active-test-subject" class="eyebrow"></p><h1 id="active-test-title"></h1><p id="active-test-meta" class="muted"></p></div>
+            <div class="page-actions">
+              <button id="test-settings-button" class="button secondary" type="button">Настройки</button>
+              <button id="publish-active-test" class="button success" type="button">Опубликовать тест</button>
+              <button id="archive-active-test" class="button danger" type="button">В архив</button>
+              <button id="test-new-question-button" class="button primary" type="button">+ Новый вопрос</button>
+            </div>
+          </div>
+          <div id="test-questions-list" class="content-list"></div>
+        </div>
+      </section>
+
+      <section id="history-trainer-view" class="view hidden">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">История</p>
+            <h1>Тренажёр по истории</h1>
+            <p id="history-trainer-summary" class="muted">Проверяем состояние базы вопросов…</p>
+          </div>
+        </div>
+        <div id="history-trainer-details" class="trainer-details"><div class="loading">Загружаем сведения…</div></div>
+        <div class="toolbar trainer-question-toolbar">
+          <input id="trainer-question-search" type="search" placeholder="Поиск по тексту вопроса" aria-label="Поиск">
+          <select id="trainer-task-filter" aria-label="Номер задания">
+            <option value="">Все номера заданий</option>
+          </select>
+          <select id="trainer-review-filter" aria-label="Проверка">
+            <option value="all">Все вопросы</option>
+            <option value="required">Требуют проверки</option>
+            <option value="ready">Проверены</option>
+          </select>
+          <select id="trainer-status-filter" aria-label="Статус">
+            <option value="">Все статусы</option>
+            <option value="draft">Черновики</option>
+            <option value="published">Опубликованные</option>
+            <option value="archived">Архив</option>
+          </select>
+          <button id="refresh-trainer-questions" class="button secondary" type="button">Найти</button>
+        </div>
+        <div id="trainer-question-list" class="content-list"></div>
+        <button id="load-more-trainer-questions" class="button secondary hidden" type="button">Показать ещё</button>
+      </section>
+
+      <section id="error-reports-view" class="view hidden">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Обратная связь учеников</p>
+            <h1>Обращения учеников</h1>
+            <p class="muted">Обращения из кабинета и сообщения об ошибках в заданиях. Ответы ученики получают только на платформе. <a href="/profile">Настроить почту уведомлений</a></p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <select id="error-report-status-filter" aria-label="Статус сообщения">
+            <option value="all">Все сообщения</option>
+            <option value="new">Новое</option><option value="in_progress">В работе</option>
+            <option value="resolved">Решено</option>
+          </select>
+          <button id="refresh-error-reports" class="button secondary" type="button">Обновить</button>
+        </div>
+        <div id="error-reports-list" class="error-reports-list"></div>
+        <button id="load-more-error-reports" class="button secondary hidden" type="button">Показать ещё</button>
+      </section>
+    </div>
+  </div>
+
+  <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+
+  <aside id="content-drawer" class="drawer hidden" aria-label="Редактор справочника">
+    <header class="drawer-header">
+      <div><p class="eyebrow">Справочник</p><h2 id="content-drawer-title">Новый материал</h2></div>
+      <button class="icon-button close-drawer" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <form id="content-form" class="drawer-body">
+      <input id="content-id" type="hidden">
+      <div id="content-system-fields" class="form-grid two">
+        <label id="content-subject-field">Предмет
+          <select id="content-subject" required>
+            <option value="history">История</option>
+            <option value="society">Обществознание</option>
+          </select>
+        </label>
+        <label id="content-section-field"><span id="content-section-label">Раздел</span>
+          <select id="content-section"><option value="">Без раздела</option></select>
+        </label>
+        <label id="content-type-field">Тип материала
+          <select id="content-type" required>
+            <option value="date">Дата</option>
+            <option value="term">Термин</option>
+            <option value="plan">План</option>
+          </select>
+        </label>
+        <label id="content-slug-field">Адрес (slug)
+          <input id="content-slug" type="text" pattern="[a-z0-9][a-z0-9-]*" required>
+        </label>
+      </div>
+      <label><span id="content-title-label">Название</span>
+        <input id="content-title" type="text" maxlength="500" required>
+      </label>
+      <label id="content-summary-field"><span id="content-summary-label">Краткое описание</span>
+        <textarea id="content-summary" rows="3"></textarea>
+      </label>
+      <label id="content-aliases-field">Альтернативные названия
+        <textarea id="content-aliases" rows="3" placeholder="Каждое название с новой строки"></textarea>
+      </label>
+
+      <section id="date-details-editor" class="content-details-editor answer-editor">
+        <h3>Историческая дата</h3>
+        <div class="form-grid two">
+          <label>Отображаемая дата
+            <input id="content-date-label" type="text" placeholder="12 июня 1812 года">
+          </label>
+          <label>Точность
+            <select id="content-date-precision">
+              <option value="day">Точный день</option>
+              <option value="month">Месяц</option>
+              <option value="year" selected>Год</option>
+              <option value="range">Период</option>
+              <option value="century">Век</option>
+              <option value="approximate">Приблизительно</option>
+              <option value="unknown">Не определено</option>
+            </select>
+          </label>
+          <label>Начальная ISO-дата
+            <input id="content-date-start" type="date">
+          </label>
+          <label>Конечная ISO-дата
+            <input id="content-date-end" type="date">
+          </label>
+        </div>
+        <label id="content-date-event-field">Событие
+          <textarea id="content-date-event" rows="4"></textarea>
+        </label>
+      </section>
+
+      <section id="term-details-editor" class="content-details-editor answer-editor hidden">
+        <h3>Термин</h3>
+        <label id="content-definition-field">Определение
+          <textarea id="content-definition" rows="5"></textarea>
+        </label>
+        <label id="content-features-field">Признаки и характеристики
+          <textarea id="content-features" rows="6" placeholder="Каждый пункт с новой строки"></textarea>
+        </label>
+      </section>
+
+      <section id="plan-details-editor" class="content-details-editor answer-editor hidden">
+        <div class="section-title">
+          <div><h3>Пункты плана</h3><p class="form-hint">Перетаскивайте пункты за маркер слева, чтобы изменить порядок.</p></div>
+          <button id="add-plan-point" class="button secondary compact" type="button">+ Пункт</button>
+        </div>
+        <div id="plan-items-builder" class="plan-builder"></div>
+        <textarea id="content-plan-introduction" class="hidden" aria-hidden="true"></textarea>
+        <textarea id="content-plan-conclusion" class="hidden" aria-hidden="true"></textarea>
+      </section>
+
+      <div class="drawer-actions">
+        <button class="button primary" type="submit">Сохранить</button>
+        <button id="publish-content" class="button success hidden" type="button">Опубликовать</button>
+        <button id="archive-content" class="button danger hidden" type="button">В архив</button>
+        <button class="button ghost close-drawer" type="button">Отмена</button>
+      </div>
+    </form>
+  </aside>
+
+  <aside id="reference-drawer" class="drawer hidden" aria-label="Настройки справочника">
+    <header class="drawer-header">
+      <div><p class="eyebrow">Справочник</p><h2 id="reference-drawer-title">Новый справочник</h2></div>
+      <button class="icon-button close-drawer" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <form id="reference-form" class="drawer-body">
+      <input id="reference-id" type="hidden">
+      <label id="reference-subject-field">Школьный предмет
+        <select id="reference-subject" required>
+          <option value="history">История</option>
+          <option value="society">Обществознание</option>
+        </select>
+      </label>
+      <label>Название справочника
+        <input id="reference-title" type="text" maxlength="300" required placeholder="Например, Исторические личности">
+      </label>
+      <section class="answer-editor">
+        <div class="section-title">
+          <div><h3>Поля справочника</h3><p class="form-hint">Добавьте поля, которые администратор будет заполнять в каждой записи.</p></div>
+          <button id="add-reference-field" class="button compact secondary" type="button">+ Поле</button>
+        </div>
+        <div id="reference-fields" class="reference-field-list"></div>
+      </section>
+      <div class="drawer-actions">
+        <button class="button primary" type="submit">Сохранить справочник</button>
+        <button class="button ghost close-drawer" type="button">Отмена</button>
+      </div>
+    </form>
+  </aside>
+
+  <aside id="custom-entry-drawer" class="drawer hidden" aria-label="Редактор записи справочника">
+    <header class="drawer-header">
+      <div><p class="eyebrow">Материал</p><h2 id="custom-entry-drawer-title">Новая запись</h2></div>
+      <button class="icon-button close-drawer" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <form id="custom-entry-form" class="drawer-body">
+      <input id="custom-entry-id" type="hidden">
+      <div id="custom-entry-fields" class="form-grid"></div>
+      <div class="drawer-actions">
+        <button class="button primary" type="submit">Сохранить</button>
+        <button id="archive-custom-entry" class="button danger hidden" type="button">В архив</button>
+        <button id="restore-custom-entry" class="button success hidden" type="button">Восстановить</button>
+        <button class="button ghost close-drawer" type="button">Отмена</button>
+      </div>
+    </form>
+  </aside>
+
+  <aside id="question-drawer" class="drawer hidden" aria-label="Редактор вопроса">
+    <header class="drawer-header">
+      <div><p class="eyebrow">Редактор</p><h2 id="question-drawer-title">Новый вопрос</h2></div>
+      <button class="icon-button close-drawer" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <form id="question-form" class="drawer-body">
+      <input id="question-id" type="hidden">
+      <div id="question-validation-warning" class="form-warning hidden" role="alert" aria-live="assertive"></div>
+      <div class="form-grid two">
+        <label>Предмет
+          <select id="question-subject" required>
+            <option value="history">История</option>
+            <option value="society">Обществознание</option>
+          </select>
+        </label>
+        <label>Раздел
+          <select id="question-section"><option value="">Без раздела</option></select>
+        </label>
+        <label>Тип вопроса
+          <select id="question-type" required>
+            <option value="single_choice">Один ответ</option>
+            <option value="multiple_choice">Несколько ответов</option>
+            <option value="text">Текстовый ответ</option>
+            <option value="matching">Сопоставление</option>
+            <option value="ordering">Последовательность</option>
+            <option value="self_check">Развёрнутый ответ с самопроверкой</option>
+          </select>
+        </label>
+      </div>
+
+      <label>Формулировка вопроса
+        <textarea id="question-text" rows="4" placeholder="Введите задание для ученика"></textarea>
+      </label>
+
+      <section class="question-image-editor">
+        <div class="section-title"><div><h3>Изображение</h3><p class="form-hint">Необязательно. Файл автоматически уменьшается и сохраняется в WebP без заметной потери качества.</p></div></div>
+        <input id="question-image-id" type="hidden">
+        <input id="question-image-url" type="hidden">
+        <div id="question-image-empty" class="image-upload-empty">
+          <label class="button secondary image-upload-button">Выбрать изображение
+            <input id="question-image-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+          </label>
+          <span class="form-hint">JPEG, PNG или WebP, до 20 МБ</span>
+        </div>
+        <div id="question-image-preview" class="question-image-preview hidden">
+          <img id="question-image-preview-src" alt="Предпросмотр изображения вопроса">
+          <div><strong id="question-image-name"></strong><p id="question-image-info" class="form-hint"></p>
+            <div class="card-actions"><label class="button secondary compact">Заменить<input id="question-image-replace" type="file" accept="image/jpeg,image/png,image/webp" hidden></label><button id="remove-question-image" class="button danger compact" type="button">Удалить</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="choice-editor" class="answer-editor">
+        <div class="section-title"><h3>Варианты ответа</h3><button id="add-option" class="button compact secondary" type="button">+ Вариант</button></div>
+        <div id="choice-options" class="option-list"></div>
+        <p class="form-hint">Отметьте правильный ответ. Для типа «Несколько ответов» можно отметить несколько вариантов.</p>
+      </section>
+
+      <section id="text-editor" class="answer-editor hidden">
+        <h3>Допустимые ответы</h3>
+        <label>Каждый вариант с новой строки
+          <textarea id="accepted-answers" rows="5" placeholder="инфляция&#10;рост общего уровня цен"></textarea>
+        </label>
+        <label class="check-row"><input id="case-sensitive" type="checkbox"> Учитывать регистр букв</label>
+      </section>
+
+      <section id="matching-editor" class="answer-editor hidden">
+        <div class="section-title"><h3>Правильные пары</h3><button id="add-pair" class="button compact secondary" type="button">+ Пара</button></div>
+        <div id="matching-pairs" class="pair-list"></div>
+      </section>
+
+      <section id="ordering-editor" class="answer-editor hidden">
+        <div class="section-title"><h3>Правильная последовательность</h3><button id="add-order-item" class="button compact secondary" type="button">+ Пункт</button></div>
+        <div id="ordering-items" class="order-list"></div>
+        <p class="form-hint">Расположите пункты сразу в правильном порядке.</p>
+      </section>
+
+      <section id="self-check-editor" class="answer-editor hidden">
+        <h3>Эталонный ответ</h3>
+        <p class="form-hint">После отправки ученик увидит этот ответ и самостоятельно сравнит его со своим.</p>
+        <label>Текст ответа
+          <textarea id="model-answer" rows="7" placeholder="Введите полный эталонный ответ"></textarea>
+        </label>
+      </section>
+
+      <label>Пояснение после ответа
+        <textarea id="question-explanation" rows="3" placeholder="Почему этот ответ правильный"></textarea>
+      </label>
+
+      <div class="form-grid two">
+        <label>Баллы
+          <input id="question-points" type="number" min="0.1" step="0.1" value="1" required>
+        </label>
+        <label>Связанные материалы
+          <input id="question-content-ids" type="text" placeholder="UUID через запятую">
+        </label>
+      </div>
+
+      <div class="drawer-actions">
+        <button class="button primary" type="submit">Сохранить</button>
+        <button id="publish-question" class="button success hidden" type="button">Опубликовать</button>
+        <button id="archive-question" class="button danger hidden" type="button">В архив</button>
+        <button class="button ghost close-drawer" type="button">Отмена</button>
+      </div>
+    </form>
+  </aside>
+
+  <aside id="test-drawer" class="drawer wide hidden" aria-label="Редактор теста">
+    <header class="drawer-header">
+      <div><p class="eyebrow">Редактор</p><h2 id="test-drawer-title">Новый тест</h2></div>
+      <button class="icon-button close-drawer" type="button" aria-label="Закрыть">×</button>
+    </header>
+    <form id="test-form" class="drawer-body">
+      <input id="test-id" type="hidden">
+      <div class="form-grid two">
+        <label>Предмет
+          <select id="test-subject" required>
+            <option value="history">История</option>
+            <option value="society">Обществознание</option>
+          </select>
+        </label>
+        <label>Раздел
+          <select id="test-section"><option value="">Без раздела</option></select>
+        </label>
+      </div>
+      <label>Название теста
+        <input id="test-title" type="text" maxlength="500" required>
+      </label>
+      <label>Ограничение времени, секунд
+        <input id="test-time-limit" type="number" min="1" placeholder="Без ограничения">
+      </label>
+      <label>Описание
+        <textarea id="test-description" rows="3"></textarea>
+      </label>
+
+      <div class="drawer-actions">
+        <button class="button primary" type="submit">Сохранить</button>
+        <button id="publish-test" class="button success hidden" type="button">Опубликовать</button>
+        <button id="archive-test" class="button danger hidden" type="button">В архив</button>
+        <button class="button ghost close-drawer" type="button">Отмена</button>
+      </div>
+    </form>
+  </aside>
+
+  <script src="/learn/assets/progress.js?v=0.24.1" defer></script>
+  <script src="/learn/assets/account.js?v=0.24.1" defer></script>
+  <script src="/learn/assets/mode-switch.js?v=0.24.1" defer></script>
+  <script src="/admin/assets/admin.js?v=0.24.1" defer></script>
+<script src="/admin/assets/promotions-admin.js?v=0.24.1" defer></script>
+</body>
+</html>

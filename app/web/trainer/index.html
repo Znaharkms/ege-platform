@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ce6969">
+  <title>Тренажёр по истории — Олеся Блок</title>
+  <link rel="stylesheet" href="/trainer/assets/trainer.css?v=0.24.1">
+<link rel="stylesheet" href="/learn/assets/mode-switch.css?v=0.24.1"><link rel="stylesheet" href="/learn/assets/inbox.css?v=0.24.1"><link rel="stylesheet" href="/learn/assets/responsive.css?v=0.24.1"><link rel="stylesheet" href="/learn/assets/promotions.css?v=0.24.1"><script src="/learn/assets/promotions.js?v=0.24.1" defer></script></head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Главная страница"><img src="/learn/assets/school-logo.webp" alt="ЕГЭ-онлайн — Олеся Блок"></a>
+    <nav aria-label="Основное меню"><a href="/">Главная</a><a href="/history">История</a><a href="/society">Обществознание</a><a href="/profile">Кабинет</a></nav>
+  </header>
+
+  <main class="page-shell">
+    <nav class="trainer-breadcrumbs" aria-label="Путь по сайту"><a href="/">Главная</a><span aria-hidden="true">›</span><a href="/history">История</a><span aria-hidden="true">›</span><span aria-current="page">Тренажёр</span></nav>
+    <section id="loading-view" class="panel loading-panel" aria-live="polite">
+      <div class="loader"></div>
+      <h1>Загружаем тренажёр</h1>
+      <p>Проверяем доступные задания и периоды.</p>
+    </section>
+
+    <section id="setup-view" class="setup-view hidden">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Подготовка к ЕГЭ</p>
+          <h1>Тренажёр по истории</h1>
+          <p class="hero-copy">Выберите режим и последовательно пройдите все вопросы. Уже отвеченные вопросы повторяться не будут.</p>
+        </div>
+        <div class="hero-stat"><strong id="total-question-count">—</strong><span>вопросов в базе</span></div>
+      </div>
+<div id="resume-card" class="resume-card hidden">
+        <div><strong>Есть незавершённая тренировка</strong><p>Можно продолжить с того же места.</p></div>
+        <div class="button-row"><button id="resume-attempt" class="button secondary" type="button">Продолжить</button><button id="discard-attempt" class="button text-button" type="button">Начать заново</button></div>
+      </div>
+
+      <form id="trainer-form" class="panel setup-card">
+        <section class="form-section">
+          <div class="section-heading"><div><span class="step">1</span><h2>Вид тренировки</h2></div></div>
+          <p class="hint">По умолчанию тренажёр предложит все ещё не пройденные вопросы.</p>
+          <div id="training-mode-options" class="mode-grid">
+            <label class="mode-option"><input type="radio" name="training-mode" value="all" checked><span><b>Все вопросы</b><small>Пройти всю оставшуюся базу</small></span></label>
+            <label class="mode-option"><input type="radio" name="training-mode" value="task"><span><b>По номеру задания</b><small>Выбрать задание ЕГЭ</small></span></label>
+            <label class="mode-option"><input type="radio" name="training-mode" value="period"><span><b>По периоду</b><small>Выбрать исторический период</small></span></label>
+            <label class="mode-option"><input type="radio" name="training-mode" value="maps"><span><b>Карты</b><small>Вопросы с историческими картами</small></span></label>
+            <label class="mode-option"><input type="radio" name="training-mode" value="mistakes"><span><b>Работа над ошибками</b><small>Повторить вопросы после неверного ответа</small></span></label>
+            <label class="mode-option"><input type="radio" name="training-mode" value="culture"><span><b>Культура</b><small>Задания по истории культуры</small></span></label>
+          </div>
+          <div id="mode-detail" class="mode-detail hidden">
+            <label id="task-select-wrap" class="hidden" for="task-select"><span>Номер задания</span><select id="task-select"></select></label>
+            <label id="period-select-wrap" class="hidden" for="period-select"><span>Исторический период</span><select id="period-select"></select></label>
+          </div>
+        </section>
+
+        <section class="form-section count-section">
+          <div class="section-heading"><div><span class="step">2</span><h2>Количество вопросов</h2></div></div>
+          <label class="optional-count"><input id="limit-question-count" type="checkbox"><span><b>Ограничить количество</b><small>Если выключено, будут предложены все оставшиеся вопросы выбранного вида.</small></span></label>
+          <div id="count-control" class="count-control hidden">
+            <button class="count-button" data-delta="-5" type="button" aria-label="Уменьшить количество">−</button>
+            <label><input id="question-count" type="number" min="1" max="100" value="10"><span>вопросов</span></label>
+            <button class="count-button" data-delta="5" type="button" aria-label="Увеличить количество">+</button>
+          </div>
+        </section>
+
+        <div class="start-area">
+          <div><strong id="available-count">Проверяем количество…</strong><span id="selection-summary">Подберём вопросы из всех заданий</span></div>
+          <button id="start-button" class="button primary large" type="submit">Начать тренировку</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="attempt-view" class="attempt-view hidden">
+      <div class="attempt-topbar">
+<div class="progress-wrap"><div class="progress-label"><span id="progress-label">Вопрос 1 из 10</span><span id="progress-percent">10%</span></div><div class="progress-track"><span id="progress-bar"></span></div></div>
+        <button id="finish-attempt" class="button finish-button" type="button">Закончить тест</button>
+      </div>
+      <article class="panel question-panel">
+        <div class="question-meta"><span id="question-number" class="question-number">Задание №1</span><span id="question-type" class="question-type"></span></div>
+        <h1 id="question-text" class="question-text"></h1>
+        <div id="source-items" class="source-items hidden"></div>
+        <button id="question-image-button" class="question-image-wrap hidden" type="button" aria-label="Открыть изображение крупно"><img id="question-image" alt="Изображение к вопросу"><span>Нажмите, чтобы увеличить</span></button>
+        <form id="answer-form">
+          <div id="answer-fields" class="answer-fields"></div>
+          <div id="answer-feedback" class="feedback hidden" aria-live="polite"></div>
+          <button id="report-question-error" class="report-error-button hidden" type="button">Сообщить об ошибке в вопросе</button>
+          <button id="answer-button" class="button primary large answer-button" type="submit">Ответить</button>
+        </form>
+      </article>
+    </section>
+
+    <section id="result-view" class="result-view hidden">
+      <div class="panel result-card">
+        <div id="result-icon" class="result-icon">✓</div>
+        <p class="eyebrow">Тренировка завершена</p>
+        <h1>Ваш результат</h1>
+        <div class="result-score"><strong id="result-score">0%</strong><span id="result-caption">автоматически проверяемые задания</span></div>
+        <div class="result-stats">
+          <div><strong id="result-total">0</strong><span>всего вопросов</span></div>
+          <div><strong id="result-answered">0</strong><span>отвечено</span></div>
+          <div><strong id="result-correct">0</strong><span>правильно</span></div>
+          <div><strong id="result-wrong">0</strong><span>ошибок</span></div>
+        </div>
+        <p id="result-note" class="result-note"></p>
+        <div class="result-actions"><button id="repeat-attempt" class="button primary large" type="button">Пройти ещё раз</button><button id="new-settings" class="button secondary large" type="button">Главный экран</button></div>
+      </div>
+    </section>
+
+    <section id="error-view" class="panel error-panel hidden">
+      <span>!</span><h1>Не удалось открыть тренажёр</h1><p id="error-message"></p><button id="retry-button" class="button primary" type="button">Попробовать снова</button>
+    </section>
+  </main>
+
+  <dialog id="image-dialog" class="image-dialog"><button id="close-image-dialog" type="button" aria-label="Закрыть">×</button><img id="dialog-image" alt="Изображение к вопросу крупно"></dialog>
+  <dialog id="report-error-dialog" class="message-dialog">
+    <form id="report-error-form" method="dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">Обратная связь</p><h2>Сообщить об ошибке</h2></div><button class="dialog-close" value="cancel" type="button" aria-label="Закрыть">×</button></div>
+      <p class="dialog-hint">Опишите, что именно неверно: условие, варианты, изображение или правильный ответ.</p>
+      <textarea id="report-error-message" rows="6" minlength="5" maxlength="2000" placeholder="Например: в правильном ответе указана неверная дата…" required></textarea>
+      <div class="dialog-actions"><button class="button primary" type="submit">Отправить администратору</button><button class="button secondary dialog-close" value="cancel" type="button">Отмена</button></div>
+    </form>
+  </dialog>
+<div id="toast" class="toast" role="status"></div>
+  <script src="/learn/assets/account.js?v=0.24.1" defer></script>
+  <script src="/learn/assets/mode-switch.js?v=0.24.1" defer></script>
+  <script src="/learn/assets/inbox.js?v=0.24.1" defer></script>
+  <script src="/trainer/assets/trainer.js?v=0.24.1" defer></script>
+</body>
+</html>
