@@ -1,0 +1,3660 @@
+openapi: 3.1.0
+info:
+  title: Olesya Blok EGE Platform API
+  version: 1.0.0
+  summary: Public reference library, EGE practice, personal progress and admin API
+  description: |
+    REST API for the History and Social Studies web application, Telegram Mini App
+    and MAX Mini App.
+
+    All published reference content and tests are public. Registration adds search
+    history, favorites, saved attempts, progress, statistics and mistake review.
+    Only users with the `admin` role may mutate educational content.
+
+    JSON fields use camelCase. Timestamps are UTC RFC 3339. IDs are UUIDs unless
+    explicitly documented otherwise. Pagination is cursor-based.
+  contact:
+    name: Olesya Blok EGE Online
+servers:
+  - url: https://api.ege-olesyablok.ru/api/v1
+    description: Production
+  - url: http://localhost:8000/api/v1
+    description: Local development
+tags:
+  - name: System
+  - name: Auth
+  - name: Subjects
+  - name: Content
+  - name: Search
+  - name: Tests
+  - name: Attempts
+  - name: Profile
+  - name: Progress
+  - name: Admin sections
+  - name: Admin content
+  - name: Admin questions
+  - name: Admin tests
+  - name: Admin imports
+  - name: Admin media
+  - name: Admin audit
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Service health check
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/email/request-code:
+    post:
+      tags: [Auth]
+      operationId: requestEmailCode
+      summary: Request a one-time email sign-in code
+      description: Always returns the same response to prevent account enumeration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailCodeRequest'
+      responses:
+        '202':
+          description: Code delivery accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /auth/email/verify-code:
+    post:
+      tags: [Auth]
+      operationId: verifyEmailCode
+      summary: Sign in or register using an email code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailCodeVerifyRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthSuccess'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /auth/telegram/exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeTelegramInitData
+      summary: Sign in or register from Telegram Mini App
+      description: The server validates Telegram initData before trusting user fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramExchangeRequest'
+      responses:
+        '200': {$ref: '#/components/responses/AuthSuccess'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /auth/max/exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMaxLaunchData
+      summary: Sign in or register from MAX Mini App
+      description: The server validates signed MAX launch data before trusting user fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaxExchangeRequest'
+      responses:
+        '200': {$ref: '#/components/responses/AuthSuccess'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshAccessToken
+      summary: Refresh an access token
+      security:
+        - RefreshCookie: []
+      responses:
+        '200':
+          description: Access token refreshed; refresh cookie may be rotated
+          headers:
+            Set-Cookie:
+              schema: {type: string}
+              description: Secure HttpOnly refresh cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Session revoked and refresh cookie cleared
+          headers:
+            Set-Cookie:
+              schema: {type: string}
+              description: Expired refresh cookie
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /subjects:
+    get:
+      tags: [Subjects]
+      operationId: listSubjects
+      summary: List active subjects
+      responses:
+        '200':
+          description: Active subjects in display order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Subject'}
+
+  /subjects/{subjectCode}/sections:
+    get:
+      tags: [Subjects]
+      operationId: listSubjectSections
+      summary: List the full section tree for a subject
+      parameters:
+        - $ref: '#/components/parameters/SubjectCode'
+      responses:
+        '200':
+          description: Nested section tree
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/SectionNode'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /content:
+    get:
+      tags: [Content]
+      operationId: listContent
+      summary: List published reference content
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/ContentTypeFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [title, newest, oldest]
+            default: title
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Published content page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContentPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /content/{contentId}:
+    get:
+      tags: [Content]
+      operationId: getContent
+      summary: Get a published content item
+      security:
+        - BearerAuth: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200':
+          description: Full published content item
+          headers:
+            ETag:
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContentDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /content/{contentId}/related:
+    get:
+      tags: [Content]
+      operationId: listRelatedContent
+      summary: List published related content and tests
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Related resources ordered by relation weight
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelatedContentResponse'
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /search:
+    get:
+      tags: [Search]
+      operationId: searchContent
+      summary: Search all published reference content
+      description: Exact title and alias matches rank above fuzzy and body matches.
+      security:
+        - BearerAuth: []
+        - {}
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          example: 1861
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/ContentTypeFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ranked search results. Query history is stored only for signed-in users.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SearchResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /tests:
+    get:
+      tags: [Tests]
+      operationId: listTests
+      summary: List published tests
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [fixed, generated]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Published test page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TestPage'}
+
+  /tests/{testId}:
+    get:
+      tags: [Tests]
+      operationId: getTest
+      summary: Get public test metadata
+      description: Does not expose prompts or correct answers before an attempt starts.
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '200':
+          description: Test metadata
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TestDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /attempts:
+    post:
+      tags: [Attempts]
+      operationId: startAttempt
+      summary: Start a public or authenticated test attempt
+      description: |
+        If no bearer token is present, an anonymous session is created and its opaque
+        token is returned once. Send that token through `X-Anonymous-Session` on every
+        later request for this attempt.
+      security:
+        - BearerAuth: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartAttemptRequest'}
+      responses:
+        '201':
+          description: Attempt created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StartAttemptResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /history-trainer/config:
+    get:
+      tags: [Tests]
+      operationId: getHistoryTrainerConfig
+      summary: Get available history trainer filters and exact question counts
+      responses:
+        '200':
+          description: Trainer configuration
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HistoryTrainerConfig'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /history-trainer/count:
+    post:
+      tags: [Tests]
+      operationId: countHistoryTrainerQuestions
+      summary: Count questions matching the selected history trainer filters
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HistoryTrainerCountRequest'}
+      responses:
+        '200':
+          description: Exact number of matching published questions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [questionCount]
+                properties:
+                  questionCount: {type: integer, minimum: 0}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /history-trainer/attempts:
+    post:
+      tags: [Attempts]
+      operationId: startHistoryTrainerAttempt
+      summary: Generate a history training attempt without repeating answered questions
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HistoryTrainerStartRequest'}
+      responses:
+        '201':
+          description: Generated attempt created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StartAttemptResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /history-trainer/error-reports:
+    post:
+      tags: [Attempts]
+      operationId: createHistoryTrainerErrorReport
+      summary: Report an error in an answered history trainer question
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuestionErrorReportCreate'}
+      responses:
+        '201':
+          description: Error report created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QuestionErrorReportCreated'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /history-trainer/error-reports/mine:
+    get:
+      tags: [Attempts]
+      operationId: listMyHistoryTrainerErrorReports
+      summary: List the current student's reports and administrator replies
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+      parameters:
+        - name: markViewed
+          in: query
+          schema: {type: boolean, default: true}
+      responses:
+        '200':
+          description: Student error reports
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MyQuestionErrorReportList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /attempts/{attemptId}:
+    get:
+      tags: [Attempts]
+      operationId: getAttempt
+      summary: Get an owned attempt and its current state
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+      responses:
+        '200':
+          description: Attempt state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /attempts/{attemptId}/answers:
+    post:
+      tags: [Attempts]
+      operationId: submitAttemptAnswer
+      summary: Submit one answer
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitAnswerRequest'}
+      responses:
+        '200':
+          description: Answer graded. The response contains only this question's result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnswerResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /attempts/{attemptId}/complete:
+    post:
+      tags: [Attempts]
+      operationId: completeAttempt
+      summary: Complete an attempt and calculate final results
+      security:
+        - BearerAuth: []
+        - AnonymousSession: []
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Final result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /me:
+    get:
+      tags: [Profile]
+      operationId: getCurrentUser
+      summary: Get the signed-in user's profile
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserProfile'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    patch:
+      tags: [Profile]
+      operationId: updateCurrentUser
+      summary: Update the signed-in user's own profile fields
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateProfileRequest'}
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserProfile'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/claim-anonymous-attempts:
+    post:
+      tags: [Profile]
+      operationId: claimAnonymousAttempts
+      summary: Attach recent anonymous attempts to the signed-in account
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClaimAnonymousAttemptsRequest'}
+      responses:
+        '200':
+          description: Attempts claimed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClaimAnonymousAttemptsResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /me/search-history:
+    get:
+      tags: [Profile]
+      operationId: getSearchHistory
+      summary: Get recent search history
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 10}
+      responses:
+        '200':
+          description: Recent searches, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/SearchHistoryItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    delete:
+      tags: [Profile]
+      operationId: clearSearchHistory
+      summary: Clear all search history
+      security: [{BearerAuth: []}]
+      responses:
+        '204': {description: Search history cleared}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/favorites:
+    get:
+      tags: [Profile]
+      operationId: listFavorites
+      summary: List saved content
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Favorite content page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContentPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/favorites/{contentId}:
+    put:
+      tags: [Profile]
+      operationId: addFavorite
+      summary: Save a content item
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '204': {description: Content saved; operation is idempotent}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Profile]
+      operationId: removeFavorite
+      summary: Remove a saved content item
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '204': {description: Content removed; operation is idempotent}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/attempts:
+    get:
+      tags: [Progress]
+      operationId: listMyAttempts
+      summary: List saved test attempts
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [in_progress, completed, abandoned, expired]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Attempt history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/progress:
+    get:
+      tags: [Progress]
+      operationId: getMyProgress
+      summary: Get overall progress by subject
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Personal progress summary
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProgressOverview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/progress/subjects/{subjectCode}:
+    get:
+      tags: [Progress]
+      operationId: getMySubjectProgress
+      summary: Get progress and weak sections for one subject
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/SubjectCode'
+      responses:
+        '200':
+          description: Subject progress
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubjectProgressDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /me/mistakes:
+    get:
+      tags: [Progress]
+      operationId: listMyMistakes
+      summary: List questions due for mistake review
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - name: dueOnly
+          in: query
+          schema: {type: boolean, default: true}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Mistake review queue
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MistakePage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /me/review-attempts:
+    post:
+      tags: [Progress]
+      operationId: startReviewAttempt
+      summary: Generate a test from the signed-in user's mistake queue
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartReviewAttemptRequest'}
+      responses:
+        '201':
+          description: Review attempt created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StartAttemptResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/sections:
+    get:
+      tags: [Admin sections]
+      operationId: adminListSections
+      summary: List active and inactive sections
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+      responses:
+        '200':
+          description: Flat section list for administration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/AdminSection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin sections]
+      operationId: adminCreateSection
+      summary: Create a section
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminSectionWrite'}
+      responses:
+        '201':
+          description: Section created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSection'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/sections/{sectionId}:
+    patch:
+      tags: [Admin sections]
+      operationId: adminUpdateSection
+      summary: Update, move or deactivate a section
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/SectionId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/AdminSectionPatch'}
+      responses:
+        '200':
+          description: Updated section
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSection'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/reference-books:
+    get:
+      tags: [Admin reference books]
+      operationId: adminListReferenceBooks
+      summary: List active and archived reference books
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [active, archived]}
+      responses:
+        '200':
+          description: Reference books
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBookList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin reference books]
+      operationId: adminCreateReferenceBook
+      summary: Create a configurable reference book
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReferenceBookCreate'}
+      responses:
+        '201':
+          description: Reference book created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBook'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/reference-books/{referenceBookId}:
+    get:
+      tags: [Admin reference books]
+      operationId: adminGetReferenceBook
+      summary: Get reference book settings
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+      responses:
+        '200':
+          description: Reference book
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBook'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin reference books]
+      operationId: adminUpdateReferenceBook
+      summary: Rename a custom reference book and change its fields
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/ReferenceBookPatch'}
+      responses:
+        '200':
+          description: Reference book updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBook'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/reference-books/{referenceBookId}/archive:
+    post:
+      tags: [Admin reference books]
+      operationId: adminArchiveReferenceBook
+      summary: Archive a reference book without deleting its data
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+      responses:
+        '200':
+          description: Archived reference book
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBook'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/reference-books/{referenceBookId}/restore:
+    post:
+      tags: [Admin reference books]
+      operationId: adminRestoreReferenceBook
+      summary: Restore an archived reference book with all its data
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+      responses:
+        '200':
+          description: Restored reference book
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceBook'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/reference-books/{referenceBookId}/entries:
+    get:
+      tags: [Admin reference books]
+      operationId: adminListReferenceEntries
+      summary: List entries of a custom reference book
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 200}
+        - name: archived
+          in: query
+          schema: {type: boolean, default: false}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Reference entry page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceEntryPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Admin reference books]
+      operationId: adminCreateReferenceEntry
+      summary: Create an entry using the configured fields
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReferenceEntryWrite'}
+      responses:
+        '201':
+          description: Reference entry created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceEntry'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/reference-books/{referenceBookId}/entries/{referenceEntryId}:
+    get:
+      tags: [Admin reference books]
+      operationId: adminGetReferenceEntry
+      summary: Get a custom reference entry
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+        - $ref: '#/components/parameters/ReferenceEntryId'
+      responses:
+        '200':
+          description: Reference entry
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceEntry'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin reference books]
+      operationId: adminUpdateReferenceEntry
+      summary: Update a custom reference entry
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+        - $ref: '#/components/parameters/ReferenceEntryId'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/ReferenceEntryWrite'}
+      responses:
+        '200':
+          description: Reference entry updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReferenceEntry'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/reference-books/{referenceBookId}/entries/{referenceEntryId}/archive:
+    post:
+      tags: [Admin reference books]
+      operationId: adminArchiveReferenceEntry
+      summary: Archive one custom reference entry
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+        - $ref: '#/components/parameters/ReferenceEntryId'
+      responses:
+        '200': {description: Entry archived}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/reference-books/{referenceBookId}/entries/{referenceEntryId}/restore:
+    post:
+      tags: [Admin reference books]
+      operationId: adminRestoreReferenceEntry
+      summary: Restore one custom reference entry
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ReferenceBookId'
+        - $ref: '#/components/parameters/ReferenceEntryId'
+      responses:
+        '200': {description: Entry restored}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/content-sources:
+    get:
+      tags: [Admin imports]
+      operationId: adminListContentSources
+      summary: Show the four SQLite sources and imported record counts
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      responses:
+        '200':
+          description: Source import overview
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContentSourcesResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/content:
+    get:
+      tags: [Admin content]
+      operationId: adminListContent
+      summary: List content including drafts and archived items
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/ContentTypeFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - $ref: '#/components/parameters/PublicationStatusFilter'
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 200}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Administrative content page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin content]
+      operationId: adminCreateContent
+      summary: Create a draft content item
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminContentCreate'}
+      responses:
+        '201':
+          description: Draft created
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/content/{contentId}:
+    get:
+      tags: [Admin content]
+      operationId: adminGetContent
+      summary: Get any content item including a draft or archived item
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200':
+          description: Administrative content representation
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin content]
+      operationId: adminUpdateContent
+      summary: Update a content item
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/AdminContentPatch'}
+      responses:
+        '200':
+          description: Content updated
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/content/{contentId}/publish:
+    post:
+      tags: [Admin content]
+      operationId: adminPublishContent
+      summary: Publish a valid content item
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Published content
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /admin/content/{contentId}/archive:
+    post:
+      tags: [Admin content]
+      operationId: adminArchiveContent
+      summary: Remove a content item from the public catalog without deleting it
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Archived content
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminContentDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/questions:
+    get:
+      tags: [Admin questions]
+      operationId: adminListQuestions
+      summary: List all question-bank items
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - name: type
+          in: query
+          schema: {$ref: '#/components/schemas/QuestionType'}
+        - $ref: '#/components/parameters/PublicationStatusFilter'
+        - name: assignment
+          in: query
+          schema: {type: string, enum: [all, assigned, unassigned], default: all}
+        - name: search
+          in: query
+          schema: {type: string, maxLength: 300}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Question page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin questions]
+      operationId: adminCreateQuestion
+      summary: Create a draft question and version 1
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminQuestionCreate'}
+      responses:
+        '201':
+          description: Question created
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/history-trainer/status:
+    get:
+      tags: [Admin questions]
+      operationId: adminGetHistoryTrainerStatus
+      summary: Get import status and counts for the history trainer
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      responses:
+        '200':
+          description: Trainer import status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminHistoryTrainerStatus'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/history-trainer/questions:
+    get:
+      tags: [Admin questions]
+      operationId: adminListHistoryTrainerQuestions
+      summary: List and filter imported history trainer questions
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: taskNumber
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 21}
+        - name: review
+          in: query
+          schema: {type: string, enum: [all, required, ready], default: all}
+        - $ref: '#/components/parameters/PublicationStatusFilter'
+        - name: search
+          in: query
+          schema: {type: string, maxLength: 300}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Trainer question page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminHistoryTrainerQuestionPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/question-error-reports:
+    get:
+      tags: [Admin questions]
+      operationId: adminListQuestionErrorReports
+      summary: List student reports about errors in questions
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [all, open, answered], default: all}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Error report page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionErrorReportPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/question-error-reports/{reportId}/reply:
+    post:
+      tags: [Admin questions]
+      operationId: adminReplyQuestionErrorReport
+      summary: Reply to a student error report
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuestionErrorReportReply'}
+      responses:
+        '200':
+          description: Reply saved
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QuestionErrorReportCreated'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /admin/questions/{questionId}:
+    get:
+      tags: [Admin questions]
+      operationId: adminGetQuestion
+      summary: Get a question including its answer specification
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '200':
+          description: Question details
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin questions]
+      operationId: adminCreateQuestionVersion
+      summary: Update a question by creating a new immutable version
+      description: Previous versions remain attached to historical attempts.
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/AdminQuestionPatch'}
+      responses:
+        '200':
+          description: New current question version
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/questions/{questionId}/publish:
+    post:
+      tags: [Admin questions]
+      operationId: adminPublishQuestion
+      summary: Publish the current question version
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Published question
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /admin/questions/{questionId}/archive:
+    post:
+      tags: [Admin questions]
+      operationId: adminArchiveQuestion
+      summary: Archive a question without breaking historical attempts
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Archived question
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminQuestionDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/tests:
+    get:
+      tags: [Admin tests]
+      operationId: adminListTests
+      summary: List all tests including drafts and archived tests
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/SubjectFilter'
+        - $ref: '#/components/parameters/SectionFilter'
+        - $ref: '#/components/parameters/PublicationStatusFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Administrative test page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin tests]
+      operationId: adminCreateTest
+      summary: Create a draft fixed or generated test
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminTestCreate'}
+      responses:
+        '201':
+          description: Test created
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/tests/{testId}:
+    get:
+      tags: [Admin tests]
+      operationId: adminGetTest
+      summary: Get a test including its fixed questions or generation blueprint
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '200':
+          description: Test details
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Admin tests]
+      operationId: adminUpdateTest
+      summary: Update test metadata, questions or generation blueprint
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/AdminTestPatch'}
+      responses:
+        '200':
+          description: Updated test
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/tests/{testId}/questions:
+    get:
+      tags: [Admin tests]
+      operationId: adminListTestQuestions
+      summary: List questions attached to one test in their display order
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '200':
+          description: Questions of the selected test
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/AdminTestQuestionItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/tests/{testId}/publish:
+    post:
+      tags: [Admin tests]
+      operationId: adminPublishTest
+      summary: Publish a valid test
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Published test
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /admin/tests/{testId}/archive:
+    post:
+      tags: [Admin tests]
+      operationId: adminArchiveTest
+      summary: Archive a test without deleting historical attempts
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/TestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Archived test
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminTestDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+
+  /admin/media/uploads:
+    post:
+      tags: [Admin media]
+      operationId: adminCreateMediaUpload
+      summary: Create a direct-upload reservation for an image or document
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MediaUploadRequest'}
+      responses:
+        '201':
+          description: Short-lived upload reservation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUploadReservation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/media/images:
+    post:
+      tags: [Admin media]
+      operationId: adminUploadQuestionImage
+      summary: Upload and optimize an image for a question
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+                altText: {type: [string, 'null'], maxLength: 500}
+      responses:
+        '201':
+          description: Optimized WebP image
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OptimizedImageAsset'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /admin/media/uploads/{uploadId}/complete:
+    post:
+      tags: [Admin media]
+      operationId: adminCompleteMediaUpload
+      summary: Verify an uploaded object and create a media asset
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CompleteMediaUploadRequest'}
+      responses:
+        '201':
+          description: Media asset created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaAsset'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/imports:
+    get:
+      tags: [Admin imports]
+      operationId: adminListImports
+      summary: List SQLite import runs
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: sourceName
+          in: query
+          schema:
+            type: string
+            enum: [history_dates, history_terms, society_terms, society_plans]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Import run page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportRunPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Admin imports]
+      operationId: adminStartImport
+      summary: Validate and import one supported SQLite source
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [sourceName, file]
+              properties:
+                sourceName:
+                  type: string
+                  enum: [history_dates, history_terms, society_terms, society_plans]
+                dryRun:
+                  type: boolean
+                  default: true
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Import accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportRun'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/imports/{importId}:
+    get:
+      tags: [Admin imports]
+      operationId: adminGetImport
+      summary: Get import status and validation errors
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Import run
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportRun'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/audit:
+    get:
+      tags: [Admin audit]
+      operationId: adminListAuditEvents
+      summary: List append-only administrative audit events
+      security: [{BearerAuth: []}]
+      x-required-role: admin
+      parameters:
+        - name: entityType
+          in: query
+          schema: {type: string}
+        - name: entityId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: action
+          in: query
+          schema: {type: string}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Audit event page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditEventPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /me/practice:
+    get:
+      tags:
+      - Profile
+      operationId: getPracticeProgress
+      summary: History trainer totals and statistics by task and period
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Completed attempt totals, groups, and current mistakeCount
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/practice/attempts:
+    get:
+      tags:
+      - Profile
+      operationId: getMyTrainerAttempts
+      summary: List owned history trainer attempts
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Owned attempts, newest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/messages:
+    post:
+      tags:
+      - Profile
+      operationId: createStudentMessage
+      summary: Submit a message and queue an administrator email notification
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - message
+              properties:
+                message:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+      responses:
+        '201':
+          description: Message saved on the platform; notification queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionErrorReportCreated'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: At most five messages per ten minutes
+  /admin/notification-settings:
+    get:
+      tags:
+      - Admin practice
+      operationId: getAdminNotificationSettings
+      summary: Read administrator notification address and pending mail count
+      security:
+      - BearerAuth: []
+      x-required-role: admin
+      responses:
+        '200':
+          description: email, smtpConfigured, pendingCount
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags:
+      - Admin practice
+      operationId: setAdminNotificationSettings
+      summary: Set the shared administrator notification email
+      security:
+      - BearerAuth: []
+      x-required-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Notification address saved
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /me/messages/{reportId}/read:
+    post:
+      tags: [Profile]
+      operationId: markStudentMessageRead
+      summary: Mark one owned administrator reply as read
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200': {description: Message marked read}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived access token
+    RefreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: Secure HttpOnly SameSite refresh cookie
+    AnonymousSession:
+      type: apiKey
+      in: header
+      name: X-Anonymous-Session
+      description: Opaque short-lived token returned when an anonymous attempt starts
+
+  parameters:
+    SubjectCode:
+      name: subjectCode
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/SubjectCode'}
+    SubjectFilter:
+      name: subject
+      in: query
+      schema: {$ref: '#/components/schemas/SubjectCode'}
+    ContentTypeFilter:
+      name: type
+      in: query
+      schema:
+        type: array
+        maxItems: 8
+        items: {$ref: '#/components/schemas/ContentType'}
+      style: form
+      explode: false
+    SectionFilter:
+      name: sectionId
+      in: query
+      schema: {type: string, format: uuid}
+    PublicationStatusFilter:
+      name: status
+      in: query
+      schema: {$ref: '#/components/schemas/PublicationStatus'}
+    ContentId:
+      name: contentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ReferenceBookId:
+      name: referenceBookId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ReferenceEntryId:
+      name: referenceEntryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    SectionId:
+      name: sectionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TestId:
+      name: testId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    QuestionId:
+      name: questionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string, maxLength: 500}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, format: uuid}
+      description: Reusing the key with a different body returns 409.
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string}
+      description: ETag from the latest GET; prevents lost updates.
+
+  responses:
+    AuthSuccess:
+      description: Authentication succeeded; refresh token is stored in a secure cookie
+      headers:
+        Set-Cookie:
+          schema: {type: string}
+          description: Secure HttpOnly refresh cookie
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuthResponse'}
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Missing, invalid or expired credentials
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Authenticated user lacks permission or does not own the resource
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Resource does not exist or is not publicly visible
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: Request conflicts with current resource or idempotency state
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PreconditionFailed:
+      description: If-Match does not match the current ETag
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ValidationFailed:
+      description: Semantic validation failed
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema: {type: integer, minimum: 1}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+
+  schemas:
+    SubjectCode:
+      type: string
+      enum: [history, society]
+    ContentType:
+      type: string
+      enum: [date, term, plan, person, event, map, theory, other]
+    PublicationStatus:
+      type: string
+      enum: [draft, published, archived]
+    QuestionType:
+      type: string
+      enum: [single_choice, multiple_choice, text, matching, ordering, map, graph, self_check]
+    AttemptStatus:
+      type: string
+      enum: [in_progress, completed, abandoned, expired]
+
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, version, time]
+      properties:
+        status: {type: string, const: ok}
+        version: {type: string}
+        time: {type: string, format: date-time}
+
+    MessageResponse:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: {type: string}
+
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code: {type: string, pattern: '^[a-z][a-z0-9_]*$'}
+        traceId: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, message]
+            properties:
+              field: {type: string}
+              code: {type: string}
+              message: {type: string}
+              questionId: {type: string, format: uuid}
+              similarity: {type: number, minimum: 0, maximum: 1}
+
+    PageMeta:
+      type: object
+      additionalProperties: false
+      required: [hasMore]
+      properties:
+        nextCursor: {type: [string, 'null']}
+        hasMore: {type: boolean}
+
+    EmailCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+
+    EmailCodeVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [email, code]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        code: {type: string, pattern: '^\d{6}$'}
+        displayName: {type: string, minLength: 1, maxLength: 120}
+
+    TelegramExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [initData]
+      properties:
+        initData: {type: string, minLength: 1, maxLength: 10000}
+
+    MaxExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [launchData]
+      properties:
+        launchData: {type: string, minLength: 1, maxLength: 10000}
+
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken: {type: string}
+        tokenType: {type: string, const: Bearer}
+        expiresIn: {type: integer, minimum: 60, example: 900}
+
+    AuthResponse:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/TokenResponse'
+        - type: object
+          required: [user, isNewUser]
+          properties:
+            user: {$ref: '#/components/schemas/UserProfile'}
+            isNewUser: {type: boolean}
+
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required: [id, role, status, displayName, providers, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        role: {type: string, enum: [student, admin]}
+        status: {type: string, enum: [active, blocked]}
+        displayName: {type: [string, 'null']}
+        email: {type: [string, 'null'], format: email}
+        avatarUrl: {type: [string, 'null'], format: uri}
+        timezone: {type: string}
+        providers:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [email, telegram, max]}
+        createdAt: {type: string, format: date-time}
+
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: {type: [string, 'null'], maxLength: 120}
+        timezone: {type: string, minLength: 1, maxLength: 64}
+
+    Subject:
+      type: object
+      additionalProperties: false
+      required: [code, title, sortOrder]
+      properties:
+        code: {$ref: '#/components/schemas/SubjectCode'}
+        title: {type: string}
+        sortOrder: {type: integer}
+
+    SectionSummary:
+      type: object
+      required: [id, subject, code, title, sortOrder]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        parentId: {type: [string, 'null'], format: uuid}
+        code: {type: string}
+        title: {type: string}
+        description: {type: [string, 'null']}
+        sortOrder: {type: integer}
+
+    SectionNode:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SectionSummary'
+        - type: object
+          required: [children]
+          properties:
+            children:
+              type: array
+              items: {$ref: '#/components/schemas/SectionNode'}
+
+    ContentSummary:
+      type: object
+      required: [id, subject, type, title, slug, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        section: {oneOf: [{$ref: '#/components/schemas/SectionSummary'}, {type: 'null'}]}
+        type: {$ref: '#/components/schemas/ContentType'}
+        title: {type: string}
+        slug: {type: string}
+        summary: {type: [string, 'null']}
+        updatedAt: {type: string, format: date-time}
+
+    TermFeature:
+      type: object
+      additionalProperties: false
+      required: [type, text, position]
+      properties:
+        type: {type: string}
+        text: {type: string}
+        position: {type: integer, minimum: 0}
+
+    PlanItem:
+      type: object
+      additionalProperties: false
+      required: [id, text, position, children]
+      properties:
+        id: {type: string, format: uuid}
+        text: {type: string}
+        position: {type: integer, minimum: 0}
+        children:
+          type: array
+          items: {$ref: '#/components/schemas/PlanItem'}
+
+    DateDetails:
+      type: object
+      additionalProperties: false
+      required: [kind, dateLabel, precision, eventText]
+      properties:
+        kind: {type: string, const: date}
+        dateLabel: {type: string}
+        dateStart: {type: [string, 'null'], format: date}
+        dateEnd: {type: [string, 'null'], format: date}
+        precision:
+          type: string
+          enum: [day, month, year, range, century, approximate, unknown]
+        eventText: {type: string}
+
+    TermDetails:
+      type: object
+      additionalProperties: false
+      required: [kind, definition, features]
+      properties:
+        kind: {type: string, const: term}
+        definition: {type: string}
+        features:
+          type: array
+          items: {$ref: '#/components/schemas/TermFeature'}
+
+    PlanDetails:
+      type: object
+      additionalProperties: false
+      required: [kind, items]
+      properties:
+        kind: {type: string, const: plan}
+        introduction: {type: [string, 'null']}
+        conclusion: {type: [string, 'null']}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlanItem'}
+
+    PlanItemWrite:
+      type: object
+      additionalProperties: false
+      required: [text, position, children]
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+          description: Omit for a new item; preserve for an existing item during replacement.
+        text: {type: string, minLength: 1}
+        position: {type: integer, minimum: 0}
+        children:
+          type: array
+          items: {$ref: '#/components/schemas/PlanItemWrite'}
+
+    PlanDetailsWrite:
+      type: object
+      additionalProperties: false
+      required: [kind, items]
+      properties:
+        kind: {type: string, const: plan}
+        introduction: {type: [string, 'null']}
+        conclusion: {type: [string, 'null']}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlanItemWrite'}
+
+    GenericDetails:
+      type: object
+      required: [kind, body]
+      properties:
+        kind: {type: string, const: generic}
+        body: {type: object, additionalProperties: true}
+
+    ContentDetails:
+      oneOf:
+        - $ref: '#/components/schemas/DateDetails'
+        - $ref: '#/components/schemas/TermDetails'
+        - $ref: '#/components/schemas/PlanDetails'
+        - $ref: '#/components/schemas/GenericDetails'
+      discriminator:
+        propertyName: kind
+
+    ContentDetailsWrite:
+      oneOf:
+        - $ref: '#/components/schemas/DateDetails'
+        - $ref: '#/components/schemas/TermDetails'
+        - $ref: '#/components/schemas/PlanDetailsWrite'
+        - $ref: '#/components/schemas/GenericDetails'
+      discriminator:
+        propertyName: kind
+
+    MediaAsset:
+      type: object
+      additionalProperties: false
+      required: [id, url, filename, mimeType, byteSize, checksumSha256, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        url: {type: string, format: uri}
+        filename: {type: string}
+        mimeType: {type: string}
+        byteSize: {type: integer, minimum: 1}
+        width: {type: [integer, 'null'], minimum: 1}
+        height: {type: [integer, 'null'], minimum: 1}
+        altText: {type: [string, 'null']}
+        checksumSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        createdAt: {type: string, format: date-time}
+
+    OptimizedImageAsset:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/MediaAsset'
+        - type: object
+          required: [originalByteSize, savedPercent]
+          properties:
+            originalByteSize: {type: integer, minimum: 1}
+            savedPercent: {type: integer, minimum: 0, maximum: 100}
+
+    ContentDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContentSummary'
+        - type: object
+          required: [aliases, details, assets, isFavorite]
+          properties:
+            aliases:
+              type: array
+              items: {type: string}
+            details: {$ref: '#/components/schemas/ContentDetails'}
+            assets:
+              type: array
+              items: {$ref: '#/components/schemas/MediaAsset'}
+            isFavorite:
+              description: False for anonymous users.
+              type: boolean
+
+    ContentPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ContentSummary'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    RelatedContentResponse:
+      type: object
+      additionalProperties: false
+      required: [content, tests]
+      properties:
+        content:
+          type: array
+          items:
+            type: object
+            required: [relation, item]
+            properties:
+              relation: {type: string, enum: [related, explains, prerequisite, mentions]}
+              item: {$ref: '#/components/schemas/ContentSummary'}
+        tests:
+          type: array
+          items: {$ref: '#/components/schemas/TestSummary'}
+
+    SearchHit:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/ContentSummary'
+        - type: object
+          required: [score, matchedBy, highlights]
+          properties:
+            score: {type: number, minimum: 0}
+            matchedBy:
+              type: string
+              enum: [title, alias, date, body, fuzzy]
+            highlights:
+              type: array
+              items: {type: string}
+
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, normalizedQuery, items, page]
+      properties:
+        query: {type: string}
+        normalizedQuery: {type: string}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/SearchHit'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    TestSummary:
+      type: object
+      required: [id, subject, title, slug, mode, questionCount]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        section: {oneOf: [{$ref: '#/components/schemas/SectionSummary'}, {type: 'null'}]}
+        title: {type: string}
+        slug: {type: string}
+        description: {type: [string, 'null']}
+        mode: {type: string, enum: [fixed, generated]}
+        questionCount: {type: integer, minimum: 0}
+        timeLimitSeconds: {type: [integer, 'null'], minimum: 1}
+
+    TestDetail:
+      allOf:
+        - $ref: '#/components/schemas/TestSummary'
+        - type: object
+          required: [totalPoints]
+          properties:
+            totalPoints: {type: number, minimum: 0}
+
+    TestPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TestSummary'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    StartAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [testId]
+      properties:
+        testId: {type: string, format: uuid}
+
+    HistoryTrainerFilterCount:
+      type: object
+      additionalProperties: false
+      required: [questionCount]
+      properties:
+        number: {type: integer, minimum: 1, maximum: 21}
+        name: {type: string}
+        code: {type: string, enum: [maps, culture, wwii, tables]}
+        questionCount: {type: integer, minimum: 0}
+
+    HistoryTrainerConfig:
+      type: object
+      additionalProperties: false
+      required: [testId, title, totalQuestionCount, tasks, periods, categories]
+      properties:
+        testId: {type: string, format: uuid}
+        title: {type: string}
+        totalQuestionCount: {type: integer, minimum: 0}
+        tasks:
+          type: array
+          items: {$ref: '#/components/schemas/HistoryTrainerFilterCount'}
+        periods:
+          type: array
+          items: {$ref: '#/components/schemas/HistoryTrainerFilterCount'}
+        categories:
+          type: array
+          items: {$ref: '#/components/schemas/HistoryTrainerFilterCount'}
+
+    HistoryTrainerStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mistakesOnly:
+          type: boolean
+          default: false
+          description: Repeat published history questions whose latest graded answer is wrong. Requires login.
+        taskNumbers:
+          type: array
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 21}
+        periods:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        categories:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [maps, culture, wwii, tables]}
+        questionCount:
+          oneOf:
+            - {type: integer, minimum: 1, maximum: 5000}
+            - {type: 'null'}
+          default: null
+          description: Null means all matching questions not previously answered by the learner.
+
+    HistoryTrainerCountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mistakesOnly:
+          type: boolean
+          default: false
+          description: Repeat published history questions whose latest graded answer is wrong. Requires login.
+        taskNumbers:
+          type: array
+          uniqueItems: true
+          items: {type: integer, minimum: 1, maximum: 21}
+        periods:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        categories:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [maps, culture, wwii, tables]}
+
+    QuestionErrorReportCreate:
+      type: object
+      additionalProperties: false
+      required: [attemptQuestionId, message]
+      properties:
+        attemptQuestionId: {type: string, format: uuid}
+        message: {type: string, minLength: 5, maxLength: 2000}
+
+    QuestionErrorReportReply:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: {type: string, minLength: 2, maxLength: 3000}
+
+    QuestionErrorReportCreated:
+      type: object
+      additionalProperties: false
+      required: [id, status]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [open, answered]}
+        adminReply: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        repliedAt: {type: [string, 'null'], format: date-time}
+
+    MyQuestionErrorReport:
+      type: object
+      additionalProperties: false
+      required: [id, message, status, createdAt, unread]
+      properties:
+        id: {type: string, format: uuid}
+        taskNumber: {type: [integer, 'null'], minimum: 1, maximum: 21}
+        questionPreview: {type: [string, 'null']}
+        message: {type: string}
+        status: {type: string, enum: [open, answered]}
+        adminReply: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        repliedAt: {type: [string, 'null'], format: date-time}
+        unread: {type: boolean}
+
+    MyQuestionErrorReportList:
+      type: object
+      additionalProperties: false
+      required: [items, unreadCount]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MyQuestionErrorReport'}
+        unreadCount: {type: integer, minimum: 0}
+
+    PublicQuestion:
+      type: object
+      additionalProperties: false
+      required: [attemptQuestionId, type, position, prompt, pointsPossible, answered]
+      properties:
+        attemptQuestionId: {type: string, format: uuid}
+        type: {$ref: '#/components/schemas/QuestionType'}
+        position: {type: integer, minimum: 1}
+        prompt: {type: object, additionalProperties: true}
+        pointsPossible: {type: number, exclusiveMinimum: 0}
+        answered: {type: boolean}
+        submittedResponse: {}
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/AnswerResult'
+            - type: 'null'
+
+    AttemptSummary:
+      type: object
+      required: [id, subject, kind, status, title, startedAt, questionCount, correctCount]
+      properties:
+        id: {type: string, format: uuid}
+        testId: {type: [string, 'null'], format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        kind: {type: string, enum: [standard, quick, review, generated]}
+        status: {$ref: '#/components/schemas/AttemptStatus'}
+        title: {type: string}
+        score: {type: [number, 'null'], minimum: 0}
+        maxScore: {type: [number, 'null'], minimum: 0}
+        correctCount: {type: integer, minimum: 0}
+        questionCount: {type: integer, minimum: 0}
+        startedAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+
+    AttemptDetail:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/AttemptSummary'
+        - type: object
+          required: [questions]
+          properties:
+            questions:
+              type: array
+              items: {$ref: '#/components/schemas/PublicQuestion'}
+
+    StartAttemptResponse:
+      type: object
+      additionalProperties: false
+      required: [attempt]
+      properties:
+        anonymousSessionToken:
+          type: [string, 'null']
+          description: Returned only when a new anonymous session is created.
+        attempt: {$ref: '#/components/schemas/AttemptDetail'}
+
+    SubmitAnswerRequest:
+      type: object
+      additionalProperties: false
+      required: [attemptQuestionId, response]
+      properties:
+        attemptQuestionId: {type: string, format: uuid}
+        response:
+          description: Shape depends on the question type.
+
+    AnswerResult:
+      type: object
+      additionalProperties: false
+      required: [attemptQuestionId, isCorrect, pointsAwarded, pointsPossible, correctAnswer, explanation, relatedContent]
+      properties:
+        attemptQuestionId: {type: string, format: uuid}
+        isCorrect: {type: [boolean, 'null']}
+        pointsAwarded: {type: [number, 'null'], minimum: 0}
+        pointsPossible: {type: number, exclusiveMinimum: 0}
+        correctAnswer: {}
+        explanation: {type: object, additionalProperties: true}
+        relatedContent:
+          type: array
+          items: {$ref: '#/components/schemas/ContentSummary'}
+
+    AttemptResult:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/AttemptSummary'
+        - type: object
+          required: [percentage, answers, savedToProfile]
+          properties:
+            percentage: {type: number, minimum: 0, maximum: 100}
+            answers:
+              type: array
+              items: {$ref: '#/components/schemas/AnswerResult'}
+            savedToProfile: {type: boolean}
+
+    AttemptPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AttemptSummary'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    ClaimAnonymousAttemptsRequest:
+      type: object
+      additionalProperties: false
+      required: [anonymousSessionToken]
+      properties:
+        anonymousSessionToken: {type: string, minLength: 20}
+
+    ClaimAnonymousAttemptsResponse:
+      type: object
+      additionalProperties: false
+      required: [claimedCount]
+      properties:
+        claimedCount: {type: integer, minimum: 0}
+
+    SearchHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [id, query, searchedAt]
+      properties:
+        id: {type: integer, format: int64}
+        query: {type: string}
+        subject: {oneOf: [{$ref: '#/components/schemas/SubjectCode'}, {type: 'null'}]}
+        selectedContent: {oneOf: [{$ref: '#/components/schemas/ContentSummary'}, {type: 'null'}]}
+        searchedAt: {type: string, format: date-time}
+
+    SubjectProgress:
+      type: object
+      additionalProperties: false
+      required: [subject, answeredCount, correctCount, completedTests, masteryScore]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        answeredCount: {type: integer, minimum: 0}
+        correctCount: {type: integer, minimum: 0}
+        completedTests: {type: integer, minimum: 0}
+        masteryScore: {type: number, minimum: 0, maximum: 1}
+        lastActivityAt: {type: [string, 'null'], format: date-time}
+
+    ProgressOverview:
+      type: object
+      additionalProperties: false
+      required: [subjects, currentStreakDays, activeDays, questionsAnswered]
+      properties:
+        subjects:
+          type: array
+          items: {$ref: '#/components/schemas/SubjectProgress'}
+        currentStreakDays: {type: integer, minimum: 0}
+        activeDays: {type: integer, minimum: 0}
+        questionsAnswered: {type: integer, minimum: 0}
+
+    SectionProgress:
+      type: object
+      additionalProperties: false
+      required: [section, answeredCount, correctCount, completedTests, masteryScore]
+      properties:
+        section: {$ref: '#/components/schemas/SectionSummary'}
+        answeredCount: {type: integer, minimum: 0}
+        correctCount: {type: integer, minimum: 0}
+        completedTests: {type: integer, minimum: 0}
+        masteryScore: {type: number, minimum: 0, maximum: 1}
+        lastActivityAt: {type: [string, 'null'], format: date-time}
+
+    SubjectProgressDetail:
+      type: object
+      additionalProperties: false
+      required: [summary, sections, weakSections]
+      properties:
+        summary: {$ref: '#/components/schemas/SubjectProgress'}
+        sections:
+          type: array
+          items: {$ref: '#/components/schemas/SectionProgress'}
+        weakSections:
+          type: array
+          items: {$ref: '#/components/schemas/SectionProgress'}
+
+    MistakeItem:
+      type: object
+      additionalProperties: false
+      required: [questionId, subject, errorCount, successfulReviews, nextReviewAt, status]
+      properties:
+        questionId: {type: string, format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        section: {oneOf: [{$ref: '#/components/schemas/SectionSummary'}, {type: 'null'}]}
+        errorCount: {type: integer, minimum: 1}
+        successfulReviews: {type: integer, minimum: 0}
+        nextReviewAt: {type: string, format: date-time}
+        status: {type: string, enum: [pending, mastered, snoozed]}
+
+    MistakePage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MistakeItem'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    StartReviewAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [subject, questionCount]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        questionCount: {type: integer, minimum: 1, maximum: 50, default: 10}
+
+    AdminSection:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SectionSummary'
+        - type: object
+          required: [isActive, createdAt, updatedAt]
+          properties:
+            isActive: {type: boolean}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
+
+    AdminSectionWrite:
+      type: object
+      additionalProperties: false
+      required: [subject, code, title]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        parentId: {type: [string, 'null'], format: uuid}
+        code: {type: string, pattern: '^[a-z0-9][a-z0-9_-]*$'}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: [string, 'null'], maxLength: 2000}
+        sortOrder: {type: integer, default: 0}
+
+    AdminSectionPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        parentId: {type: [string, 'null'], format: uuid}
+        code: {type: string, pattern: '^[a-z0-9][a-z0-9_-]*$'}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: [string, 'null'], maxLength: 2000}
+        sortOrder: {type: integer}
+        isActive: {type: boolean}
+
+    AdminContentBase:
+      type: object
+      additionalProperties: false
+      required: [subject, type, title, slug, aliases, details]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/ContentType'}
+        title: {type: string, minLength: 1, maxLength: 500}
+        slug: {type: string, pattern: '^[a-z0-9][a-z0-9-]*$'}
+        summary: {type: [string, 'null'], maxLength: 5000}
+        aliases:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 500}
+        details: {$ref: '#/components/schemas/ContentDetailsWrite'}
+        assets:
+          type: array
+          items: {$ref: '#/components/schemas/ContentAssetWrite'}
+        relations:
+          type: array
+          items: {$ref: '#/components/schemas/ContentRelationWrite'}
+
+    AdminContentCreate:
+      allOf:
+        - $ref: '#/components/schemas/AdminContentBase'
+
+    AdminContentPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sectionId: {type: [string, 'null'], format: uuid}
+        title: {type: string, minLength: 1, maxLength: 500}
+        slug: {type: string, pattern: '^[a-z0-9][a-z0-9-]*$'}
+        summary: {type: [string, 'null'], maxLength: 5000}
+        aliases:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 500}
+        details: {$ref: '#/components/schemas/ContentDetailsWrite'}
+        assets:
+          type: array
+          items: {$ref: '#/components/schemas/ContentAssetWrite'}
+        relations:
+          type: array
+          items: {$ref: '#/components/schemas/ContentRelationWrite'}
+
+    ContentAssetWrite:
+      type: object
+      additionalProperties: false
+      required: [assetId, role, sortOrder]
+      properties:
+        assetId: {type: string, format: uuid}
+        role: {type: string, minLength: 1, maxLength: 100}
+        sortOrder: {type: integer, minimum: 0}
+
+    ContentRelationWrite:
+      type: object
+      additionalProperties: false
+      required: [targetContentId, relationType, weight]
+      properties:
+        targetContentId: {type: string, format: uuid}
+        relationType:
+          type: string
+          enum: [related, explains, prerequisite, mentions]
+        weight: {type: integer, minimum: 0, maximum: 1000, default: 100}
+
+    AdminContentDetail:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/ContentDetail'
+        - type: object
+          required: [status, assetLinks, relations, createdAt, createdBy, updatedBy]
+          properties:
+            status: {$ref: '#/components/schemas/PublicationStatus'}
+            assetLinks:
+              type: array
+              items: {$ref: '#/components/schemas/ContentAssetWrite'}
+            relations:
+              type: array
+              items: {$ref: '#/components/schemas/ContentRelationWrite'}
+            createdAt: {type: string, format: date-time}
+            publishedAt: {type: [string, 'null'], format: date-time}
+            archivedAt: {type: [string, 'null'], format: date-time}
+            createdBy: {type: [string, 'null'], format: uuid}
+            updatedBy: {type: [string, 'null'], format: uuid}
+
+    AdminContentListItem:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/ContentSummary'
+        - type: object
+          required: [status, createdAt]
+          properties:
+            status: {$ref: '#/components/schemas/PublicationStatus'}
+            createdAt: {type: string, format: date-time}
+            publishedAt: {type: [string, 'null'], format: date-time}
+            archivedAt: {type: [string, 'null'], format: date-time}
+
+    AdminContentPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminContentListItem'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    AdminQuestionCreate:
+      type: object
+      additionalProperties: false
+      required: [subject, type, prompt, answerSpec, defaultPoints]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        testId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/QuestionType'}
+        prompt:
+          type: object
+          additionalProperties: true
+          description: Must contain a non-blank text field and complete type-specific data.
+        answerSpec:
+          type: object
+          additionalProperties: true
+          writeOnly: true
+          description: Must contain a complete answer for the selected question type.
+        explanation: {type: object, additionalProperties: true}
+        defaultPoints: {type: number, exclusiveMinimum: 0, default: 1}
+        contentIds:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        tagIds:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        allowDuplicate:
+          type: boolean
+          default: false
+          description: Save after an administrator explicitly confirms a duplicate warning.
+
+    AdminQuestionPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sectionId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/QuestionType'}
+        prompt: {type: object, additionalProperties: true}
+        answerSpec: {type: object, additionalProperties: true, writeOnly: true}
+        explanation: {type: object, additionalProperties: true}
+        defaultPoints: {type: number, exclusiveMinimum: 0}
+        contentIds:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        tagIds:
+          type: array
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        allowDuplicate:
+          type: boolean
+          default: false
+          description: Save after an administrator explicitly confirms a duplicate warning.
+
+    AdminQuestionSummary:
+      type: object
+      required: [id, subject, type, status, currentVersion, testCount, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/QuestionType'}
+        status: {$ref: '#/components/schemas/PublicationStatus'}
+        currentVersion: {type: integer, minimum: 1}
+        promptPreview: {type: [string, 'null']}
+        testCount: {type: integer, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+
+    AdminHistoryTrainerStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - imported
+        - totalQuestionCount
+        - publishedQuestionCount
+        - draftQuestionCount
+        - taskCount
+        - periodCount
+        - reviewRequiredCount
+        - imageCount
+        - tasks
+      properties:
+        imported: {type: boolean}
+        totalQuestionCount: {type: integer, minimum: 0}
+        publishedQuestionCount: {type: integer, minimum: 0}
+        draftQuestionCount: {type: integer, minimum: 0}
+        taskCount: {type: integer, minimum: 0, maximum: 21}
+        periodCount: {type: integer, minimum: 0}
+        reviewRequiredCount: {type: integer, minimum: 0}
+        imageCount: {type: integer, minimum: 0}
+        tasks:
+          type: array
+          items: {$ref: '#/components/schemas/HistoryTrainerFilterCount'}
+
+    AdminHistoryTrainerQuestion:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - sourceRowId
+        - taskNumber
+        - categories
+        - type
+        - status
+        - currentVersion
+        - defaultPoints
+        - reviewRequired
+        - reviewReasons
+        - updatedAt
+      properties:
+        id: {type: string, format: uuid}
+        sourceRowId: {type: integer}
+        taskNumber: {type: integer, minimum: 1, maximum: 21}
+        period: {type: [string, 'null']}
+        categories:
+          type: array
+          items: {type: string}
+        type: {$ref: '#/components/schemas/QuestionType'}
+        status: {$ref: '#/components/schemas/PublicationStatus'}
+        currentVersion: {type: integer, minimum: 1}
+        defaultPoints: {type: number, exclusiveMinimum: 0}
+        promptPreview: {type: [string, 'null']}
+        image:
+          oneOf:
+            - {type: object, additionalProperties: true}
+            - {type: 'null'}
+        reviewRequired: {type: boolean}
+        reviewReasons:
+          type: array
+          items: {type: string}
+        updatedAt: {type: string, format: date-time}
+
+    AdminHistoryTrainerQuestionPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminHistoryTrainerQuestion'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    AdminQuestionErrorReport:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - questionId
+        - questionVersion
+        - attemptQuestionId
+        - message
+        - status
+        - createdAt
+      properties:
+        id: {type: string, format: uuid}
+        questionId: {type: [string, 'null'], format: uuid}
+        questionVersion: {type: [integer, 'null'], minimum: 1}
+        attemptQuestionId: {type: [string, 'null'], format: uuid}
+        taskNumber: {type: [integer, 'null'], minimum: 1, maximum: 21}
+        questionPreview: {type: [string, 'null']}
+        message: {type: string}
+        status: {type: string, enum: [open, answered]}
+        adminReply: {type: [string, 'null']}
+        reporter:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              properties:
+                name: {type: [string, 'null']}
+                email: {type: string, format: email}
+            - type: 'null'
+        createdAt: {type: string, format: date-time}
+        repliedAt: {type: [string, 'null'], format: date-time}
+
+    AdminQuestionErrorReportPage:
+      type: object
+      additionalProperties: false
+      required: [items, openCount, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminQuestionErrorReport'}
+        openCount: {type: integer, minimum: 0}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    AdminQuestionDetail:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/AdminQuestionSummary'
+        - type: object
+          required: [prompt, answerSpec, explanation, defaultPoints, contentIds, tagIds, createdAt]
+          properties:
+            prompt: {type: object, additionalProperties: true}
+            answerSpec: {type: object, additionalProperties: true}
+            explanation: {type: object, additionalProperties: true}
+            defaultPoints: {type: number, exclusiveMinimum: 0}
+            contentIds:
+              type: array
+              items: {type: string, format: uuid}
+            tagIds:
+              type: array
+              items: {type: string, format: uuid}
+            createdAt: {type: string, format: date-time}
+            publishedAt: {type: [string, 'null'], format: date-time}
+            archivedAt: {type: [string, 'null'], format: date-time}
+
+    AdminQuestionPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminQuestionSummary'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    AdminTestQuestionItem:
+      allOf:
+        - $ref: '#/components/schemas/AdminQuestionSummary'
+        - type: object
+          required: [position, points, required]
+          properties:
+            position: {type: integer, minimum: 1}
+            points: {type: number, exclusiveMinimum: 0}
+            pointsOverride: {type: [number, 'null'], exclusiveMinimum: 0}
+            required: {type: boolean}
+            image:
+              oneOf:
+                - $ref: '#/components/schemas/MediaAsset'
+                - type: 'null'
+
+    TestQuestionRef:
+      type: object
+      additionalProperties: false
+      required: [questionId, position, required]
+      properties:
+        questionId: {type: string, format: uuid}
+        position: {type: integer, minimum: 1}
+        pointsOverride: {type: [number, 'null'], exclusiveMinimum: 0}
+        required: {type: boolean, default: true}
+
+    GenerationBlueprint:
+      type: object
+      additionalProperties: false
+      required: [questionCount]
+      properties:
+        questionCount: {type: integer, minimum: 1, maximum: 100}
+        sectionIds:
+          type: array
+          items: {type: string, format: uuid}
+        questionTypes:
+          type: array
+          items: {$ref: '#/components/schemas/QuestionType'}
+        tagIds:
+          type: array
+          items: {type: string, format: uuid}
+        randomizeQuestions: {type: boolean, default: true}
+
+    AdminTestCreate:
+      type: object
+      additionalProperties: false
+      required: [subject, title, mode]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        sectionId: {type: [string, 'null'], format: uuid}
+        title: {type: string, minLength: 1, maxLength: 500}
+        description: {type: [string, 'null'], maxLength: 5000}
+        mode: {type: string, enum: [fixed, generated]}
+        timeLimitSeconds: {type: [integer, 'null'], minimum: 1}
+        questions:
+          type: array
+          items: {$ref: '#/components/schemas/TestQuestionRef'}
+        blueprint:
+          oneOf:
+            - $ref: '#/components/schemas/GenerationBlueprint'
+            - type: 'null'
+
+    AdminTestPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sectionId: {type: [string, 'null'], format: uuid}
+        title: {type: string, minLength: 1, maxLength: 500}
+        description: {type: [string, 'null'], maxLength: 5000}
+        timeLimitSeconds: {type: [integer, 'null'], minimum: 1}
+        questions:
+          type: array
+          items: {$ref: '#/components/schemas/TestQuestionRef'}
+        blueprint:
+          oneOf:
+            - $ref: '#/components/schemas/GenerationBlueprint'
+            - type: 'null'
+
+    AdminTestDetail:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/TestDetail'
+        - type: object
+          required: [status, questions, createdAt, updatedAt]
+          properties:
+            status: {$ref: '#/components/schemas/PublicationStatus'}
+            questions:
+              type: array
+              items: {$ref: '#/components/schemas/TestQuestionRef'}
+            blueprint:
+              oneOf:
+                - $ref: '#/components/schemas/GenerationBlueprint'
+                - type: 'null'
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
+            publishedAt: {type: [string, 'null'], format: date-time}
+            archivedAt: {type: [string, 'null'], format: date-time}
+
+    AdminTestPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminTestDetail'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    MediaUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, mimeType, byteSize, checksumSha256]
+      properties:
+        filename: {type: string, minLength: 1, maxLength: 255}
+        mimeType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, image/svg+xml, application/pdf]
+        byteSize: {type: integer, minimum: 1, maximum: 52428800}
+        checksumSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+
+    MediaUploadReservation:
+      type: object
+      additionalProperties: false
+      required: [uploadId, uploadUrl, method, expiresAt]
+      properties:
+        uploadId: {type: string, format: uuid}
+        uploadUrl: {type: string, format: uri}
+        method: {type: string, const: PUT}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+
+    CompleteMediaUploadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        altText: {type: [string, 'null'], maxLength: 500}
+
+    ImportError:
+      type: object
+      additionalProperties: false
+      required: [sourceTable, sourceRecordId, code, message]
+      properties:
+        sourceTable: {type: string}
+        sourceRecordId: {type: string}
+        code: {type: string}
+        message: {type: string}
+
+    ImportRun:
+      type: object
+      additionalProperties: false
+      required: [id, sourceName, sourceFilename, dryRun, status, counts, errors, startedAt]
+      properties:
+        id: {type: string, format: uuid}
+        sourceName:
+          type: string
+          enum: [history_dates, history_terms, society_terms, society_plans]
+        sourceFilename: {type: string}
+        dryRun: {type: boolean}
+        status: {type: string, enum: [running, completed, failed, cancelled]}
+        counts:
+          type: object
+          additionalProperties: false
+          required: [inserted, updated, skipped, failed]
+          properties:
+            inserted: {type: integer, minimum: 0}
+            updated: {type: integer, minimum: 0}
+            skipped: {type: integer, minimum: 0}
+            failed: {type: integer, minimum: 0}
+        errors:
+          type: array
+          items: {$ref: '#/components/schemas/ImportError'}
+        startedAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+
+    ImportRunPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ImportRun'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    ReferenceFieldType:
+      type: string
+      enum: [text, long_text, number, date, boolean]
+
+    ReferenceFieldCreate:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 200}
+        type: {$ref: '#/components/schemas/ReferenceFieldType'}
+        required: {type: boolean, default: false}
+
+    ReferenceField:
+      type: object
+      additionalProperties: false
+      required: [id, key, label, type, required, sortOrder]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, pattern: '^[a-z][a-z0-9_]*$'}
+        label: {type: string}
+        type: {$ref: '#/components/schemas/ReferenceFieldType'}
+        required: {type: boolean}
+        sortOrder: {type: integer, minimum: 0}
+
+    ReferenceFieldUpdate:
+      allOf:
+        - $ref: '#/components/schemas/ReferenceFieldCreate'
+        - type: object
+          properties:
+            id: {type: string, format: uuid}
+
+    ReferenceBookCreate:
+      type: object
+      additionalProperties: false
+      required: [subject, title, fields]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        title: {type: string, minLength: 1, maxLength: 300}
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: {$ref: '#/components/schemas/ReferenceFieldCreate'}
+
+    ReferenceBookPatch:
+      type: object
+      additionalProperties: false
+      required: [title, fields]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 300}
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: {$ref: '#/components/schemas/ReferenceFieldUpdate'}
+
+    ReferenceBook:
+      type: object
+      additionalProperties: false
+      required: [id, code, title, subject, subjectTitle, kind, status, fields, recordCount, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        title: {type: string}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        subjectTitle: {type: string}
+        kind: {type: string, enum: [builtin, custom]}
+        contentType:
+          oneOf:
+            - $ref: '#/components/schemas/ContentType'
+            - type: 'null'
+        sourceName: {type: [string, 'null']}
+        status: {type: string, enum: [active, archived]}
+        fields:
+          type: array
+          items: {$ref: '#/components/schemas/ReferenceField'}
+        recordCount: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        archivedAt: {type: [string, 'null'], format: date-time}
+
+    ReferenceBookList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ReferenceBook'}
+
+    ReferenceEntryWrite:
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+
+    ReferenceEntry:
+      type: object
+      additionalProperties: false
+      required: [id, values]
+      properties:
+        id: {type: string, format: uuid}
+        values: {type: object, additionalProperties: true}
+        archived: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        archivedAt: {type: [string, 'null'], format: date-time}
+
+    ReferenceEntryPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ReferenceEntry'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+
+    ContentSourceOverview:
+      type: object
+      additionalProperties: false
+      required: [sourceName, label, subject, type, recordCount]
+      properties:
+        sourceName:
+          type: string
+          enum: [history_dates, history_terms, society_terms, society_plans]
+        label: {type: string}
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        type: {$ref: '#/components/schemas/ContentType'}
+        recordCount: {type: integer, minimum: 0}
+        lastImportedAt: {type: [string, 'null'], format: date-time}
+        lastRun:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+
+    ContentCount:
+      type: object
+      additionalProperties: false
+      required: [subject, type, status, count]
+      properties:
+        subject: {$ref: '#/components/schemas/SubjectCode'}
+        type: {$ref: '#/components/schemas/ContentType'}
+        status: {$ref: '#/components/schemas/PublicationStatus'}
+        count: {type: integer, minimum: 0}
+
+    ContentSourcesResponse:
+      type: object
+      additionalProperties: false
+      required: [sources, contentCounts]
+      properties:
+        sources:
+          type: array
+          items: {$ref: '#/components/schemas/ContentSourceOverview'}
+        contentCounts:
+          type: array
+          items: {$ref: '#/components/schemas/ContentCount'}
+
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, action, entityType, createdAt]
+      properties:
+        id: {type: integer, format: int64}
+        actorUserId: {type: [string, 'null'], format: uuid}
+        action: {type: string}
+        entityType: {type: string}
+        entityId: {type: [string, 'null'], format: uuid}
+        oldData: {type: [object, 'null'], additionalProperties: true}
+        newData: {type: [object, 'null'], additionalProperties: true}
+        requestId: {type: [string, 'null'], format: uuid}
+        createdAt: {type: string, format: date-time}
+
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AuditEvent'}
+        page: {$ref: '#/components/schemas/PageMeta'}
